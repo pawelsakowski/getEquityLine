@@ -1,0 +1,314 @@
+---
+title: "getEquityLine() function"
+author: "Paweł Sakowski"
+date: "`r Sys.time()`"
+output: 
+  html_document:
+    theme: spacelab
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scrool: true
+    number_sections: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F, fig.width = 9)
+```
+
+# Loading packages and functions
+```{r}
+library(tidyverse)
+library(xts)
+library(dygraphs)
+library(quantmod)
+source("funs/getEquityLine.R")
+source("funs/getPerformanceStats.R")
+```
+
+# Example1
+
+## Data
+
+```{r}
+nObs <- 365
+set.seed(1234)
+quotes <-
+  tibble(
+    Date = seq(from = Sys.Date() - nObs + 1, to = Sys.Date(), by = 1) %>% as.Date()
+  ) %>%
+  mutate(
+    eq1 = rnorm(nObs, 0, 0.01) %>% cumsum() %>% exp(),
+    eq2 = rnorm(nObs, 0, 0.01) %>% cumsum() %>% exp(),
+    eq3 = rnorm(nObs, 0, 0.01) %>% cumsum() %>% exp(),
+    eq4 = rnorm(nObs, 0, 0.01) %>% cumsum() %>% exp()
+  ) %>%
+  mutate(eq1 = eq1/first(eq1)) %>%
+  mutate(eq2 = eq2/first(eq2)) %>%
+  mutate(eq3 = eq3/first(eq3)) %>%
+  mutate(eq4 = eq4/first(eq4)) %>%
+  pivot_longer(!Date) %>%
+  rename(Price = value)
+```
+
+## Initial weights
+```{r}
+weightsList <- list()
+weightsList[[1]] <- c(0.25, 0.25, 0.25, 0.25)
+names(weightsList[[1]]) <- c("eq1", "eq2", "eq3", "eq4")
+names(weightsList)[1] <- quotes %>% 
+  head(1) %>% select(Date) %>% pull() %>% as.character()
+weightsList
+```
+
+## Equity line
+```{r}
+quotes <- 
+  quotes %>%
+  bind_rows(
+    getEquityLine(quotes, weightsList, 0, 1, 1) %>% 
+      rename(Price = eqL) %>% 
+      mutate(name = "eqL")
+  )
+```
+
+## Visualisation
+
+```{r eval = F}
+quotes %>%
+  ggplot(aes(Date, Price, col = name)) +
+  geom_line()
+```
+
+```{r}
+quotes.xts <- 
+  quotes %>% 
+  pivot_wider(names_from = name, values_from = Price) %>%
+  select(-Date) %>%
+  xts(order.by = quotes$Date %>% unique() %>% sort())
+
+quotes.xts %>% 
+  dygraph() %>%
+  dyRangeSelector(height = 40)
+```
+
+## Performance stats
+```{r}
+quotes %>%
+  pivot_wider(names_from = name, values_from = Price) %>%
+  select_at(vars(starts_with("eq"))) %>%
+  map_df(~ getPerformanceStats(., scale = 365), 
+        .id = "eqline") %>%
+  kableExtra::kable(
+    caption = "Performance stats based on daily intervals",
+    row.names = T, digits = 2, escape = F
+  ) %>%
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive" ),
+    full_width = T, font_size = 14
+  )
+```
+
+where:
+
+* aRC - Annualized Rate of Return (%), compounded daily
+* aSD - Annualized Standard Deviation of daily returns (%),
+* MD  - Maximum Drawdown (%),
+* MLD - Maximum Loss Duration (in years),
+* IR1 - Information Ratio, aRC/aSD,
+* IR2 - IR1 * aRC * sign(aRC)/MD
+* IR3 - aRC ^ 3 / (aSD * MD * MLD)
+* nObs    - number of observations
+
+# Example 2
+
+## Data
+
+```{r}
+nObs <- 365
+set.seed(1234)
+quotes <-
+  tibble(
+    Date = seq(from = Sys.Date() - nObs + 1, to = Sys.Date(), by = 1) %>% as.Date()
+  ) %>%
+  mutate(
+    eq1 = rnorm(nObs, 0.0005, 0.002) %>% cumsum() %>% exp(),
+    eq2 = rnorm(nObs, 0.0004, 0.002) %>% cumsum() %>% exp(),
+    eq3 = -rnorm(nObs, 0.0003, 0.002) %>% cumsum() %>% exp(),
+    eq4 = -rnorm(nObs, 0.0002, 0.002) %>% cumsum() %>% exp(),
+  ) %>%
+  mutate(eq1 = eq1/first(eq1)) %>%
+  mutate(eq2 = eq2/first(eq2)) %>%
+  mutate(eq3 = eq3/first(eq3)) %>%
+  mutate(eq4 = eq4/first(eq4)) %>%
+  pivot_longer(!Date) %>%
+  rename(Price = value)
+```
+
+## Initial weights
+```{r}
+weightsList <- list()
+weightsList[[1]] <- c(0.25, 0.25, 0.25, 0.25)
+names(weightsList[[1]]) <- c("eq1", "eq2", "eq3", "eq4")
+names(weightsList)[1] <- quotes %>% 
+  head(1) %>% select(Date) %>% pull() %>% as.character()
+weightsList
+```
+
+## Equity line
+```{r}
+quotes <- 
+  quotes %>%
+  bind_rows(
+    getEquityLine(quotes, weightsList, 0, 1, 1) %>% 
+      rename(Price = eqL) %>% 
+      mutate(name = "eqL")
+  )
+```
+
+## Visualisation
+
+```{r eval = F}
+quotes %>%
+  ggplot(aes(Date, Price, col = name)) +
+  geom_line()
+```
+
+```{r}
+quotes.xts <- 
+  quotes %>% 
+  pivot_wider(names_from = name, values_from = Price) %>%
+  select(-Date) %>%
+  xts(order.by = quotes$Date %>% unique() %>% sort())
+
+quotes.xts %>% 
+  dygraph() %>%
+  dyRangeSelector(height = 40)
+```
+
+## Performance stats
+```{r}
+quotes %>%
+  pivot_wider(names_from = name, values_from = Price) %>%
+  select_at(vars(starts_with("eq"))) %>%
+  map_df(~ getPerformanceStats(., scale = 365), 
+        .id = "eqline") %>%
+  kableExtra::kable(
+    caption = "Performance stats based on daily intervals",
+    row.names = T, digits = 2, escape = F
+  ) %>%
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive" ),
+    full_width = T, font_size = 14
+  )
+```
+
+where:
+
+* aRC - Annualized Rate of Return (%), compounded daily
+* aSD - Annualized Standard Deviation of daily returns (%),
+* MD  - Maximum Drawdown (%),
+* MLD - Maximum Loss Duration (in years),
+* IR1 - Information Ratio, aRC/aSD,
+* IR2 - IR1 * aRC * sign(aRC)/MD
+* IR3 - aRC ^ 3 / (aSD * MD * MLD)
+* nObs    - number of observations
+
+
+# Example 3
+
+## Data
+
+```{r}
+nObs <- 365
+set.seed(1234)
+quotes <-
+  tibble(
+    Date = seq(from = Sys.Date() - nObs + 1, to = Sys.Date(), by = 1) %>% as.Date()
+  ) %>%
+  mutate(
+    eq1 = seq(from = 1, to = 3, length.out = nObs),
+    eq2 = seq(from = 1, to = 2, length.out = nObs),
+    eq3 = seq(from = 1, to = 0, length.out = nObs),
+    eq4 = seq(from = 1, to = 0, length.out = nObs)
+  ) %>%
+  mutate(eq1 = eq1/first(eq1)) %>%
+  mutate(eq2 = eq2/first(eq2)) %>%
+  mutate(eq3 = eq3/first(eq3)) %>%
+  mutate(eq4 = eq4/first(eq4)) %>%
+  pivot_longer(!Date) %>%
+  rename(Price = value)
+```
+
+## Initial weights
+```{r}
+weightsList <- list()
+weightsList[[1]] <- c(0.25, 0.25, 0.25, 0.25)
+names(weightsList[[1]]) <- c("eq1", "eq2", "eq3", "eq4")
+names(weightsList)[1] <- quotes %>% 
+  head(1) %>% select(Date) %>% pull() %>% as.character()
+weightsList
+```
+
+## Equity line
+```{r}
+quotes <- 
+  quotes %>%
+  bind_rows(
+    getEquityLine(quotes, weightsList, 0, 1, 1) %>% 
+      rename(Price = eqL) %>% 
+      mutate(name = "eqL")
+  )
+```
+
+## Visualisation
+
+```{r eval = F}
+quotes %>%
+  ggplot(aes(Date, Price, col = name)) +
+  geom_line()
+```
+
+```{r}
+quotes.xts <- 
+  quotes %>% 
+  pivot_wider(names_from = name, values_from = Price) %>%
+  select(-Date) %>%
+  xts(order.by = quotes$Date %>% unique() %>% sort())
+
+quotes.xts %>% 
+  dygraph() %>%
+  dyRangeSelector(height = 40)
+```
+
+## Performance stats
+```{r}
+quotes %>%
+  pivot_wider(names_from = name, values_from = Price) %>%
+  select_at(vars(starts_with("eq"))) %>%
+  map_df(~ getPerformanceStats(., scale = 365), 
+        .id = "eqline") %>%
+  kableExtra::kable(
+    caption = "Performance stats based on daily intervals",
+    row.names = T, digits = 2, escape = F
+  ) %>%
+  kableExtra::kable_styling(
+    bootstrap_options = c("striped", "hover", "condensed", "responsive" ),
+    full_width = T, font_size = 14
+  )
+```
+
+where:
+
+* aRC - Annualized Rate of Return (%), compounded daily
+* aSD - Annualized Standard Deviation of daily returns (%),
+* MD  - Maximum Drawdown (%),
+* MLD - Maximum Loss Duration (in years),
+* IR1 - Information Ratio, aRC/aSD,
+* IR2 - IR1 * aRC * sign(aRC)/MD
+* IR3 - aRC ^ 3 / (aSD * MD * MLD)
+* nObs    - number of observations
+

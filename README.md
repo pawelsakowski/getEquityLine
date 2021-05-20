@@ -1,0 +1,1 @@
+calculating equity line from a set of instruments with given rebalanced weights
